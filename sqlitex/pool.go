@@ -19,7 +19,7 @@ import (
 	"runtime/trace"
 	"sync"
 
-	"crawshaw.io/sqlite"
+	"github.com/moleculer-go/sqlite"
 )
 
 // Pool is a pool of SQLite connections.

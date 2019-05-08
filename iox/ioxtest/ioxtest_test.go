@@ -12,31 +12,32 @@
 // ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 // OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-package sqlitex
+package ioxtest
 
 import (
+	"bytes"
 	"io/ioutil"
 	"testing"
-
-	"github.com/moleculer-go/sqlite/iox/ioxtest"
-	"github.com/moleculer-go/sqlite"
 )
 
-func TestFileRand(t *testing.T) {
-	conn, err := sqlite.OpenConn(":memory:", 0)
+func TestTester(t *testing.T) {
+	f1, err := ioutil.TempFile("", "iotest")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	f2, err := ioutil.TempFile("", "iotest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ft := &Tester{T: t, F1: f1, F2: f2}
+	ft.Run()
+}
 
-	f1, err := NewFile(conn)
-	if err != nil {
-		t.Fatal(err)
+func TestBuffer(t *testing.T) {
+	ft := &Tester{
+		T:  t,
+		F1: new(bytes.Buffer),
+		F2: new(bytes.Buffer),
 	}
-	f2, err := ioutil.TempFile("", "sqlitex")
-	if err != nil {
-		t.Fatal(err)
-	}
-	ft := &ioxtest.Tester{F1: f1, F2: f2, T: t}
 	ft.Run()
 }

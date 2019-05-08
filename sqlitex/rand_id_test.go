@@ -17,8 +17,8 @@ package sqlitex_test
 import (
 	"testing"
 
-	"crawshaw.io/sqlite"
-	"crawshaw.io/sqlite/sqlitex"
+	"github.com/moleculer-go/sqlite"
+	"github.com/moleculer-go/sqlite/sqlitex"
 )
 
 func TestRandID(t *testing.T) {

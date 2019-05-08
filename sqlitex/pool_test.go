@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
-	"crawshaw.io/sqlite"
-	"crawshaw.io/sqlite/sqlitex"
+	"github.com/moleculer-go/sqlite"
+	"github.com/moleculer-go/sqlite/sqlitex"
 )
 
 const poolSize = 20

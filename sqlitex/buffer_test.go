@@ -19,8 +19,8 @@ import (
 	"io"
 	"testing"
 
-	"crawshaw.io/iox/ioxtest"
-	"crawshaw.io/sqlite"
+	"github.com/moleculer-go/sqlite/iox/ioxtest"
+	"github.com/moleculer-go/sqlite"
 )
 
 func TestBuffer(t *testing.T) {

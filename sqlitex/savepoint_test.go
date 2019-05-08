@@ -22,7 +22,7 @@ import (
 	"strings"
 	"testing"
 
-	"crawshaw.io/sqlite"
+	"github.com/moleculer-go/sqlite"
 )
 
 func TestExec(t *testing.T) {

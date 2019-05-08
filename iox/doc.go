@@ -12,31 +12,18 @@
 // ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 // OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-package sqlitex
-
-import (
-	"io/ioutil"
-	"testing"
-
-	"github.com/moleculer-go/sqlite/iox/ioxtest"
-	"github.com/moleculer-go/sqlite"
-)
-
-func TestFileRand(t *testing.T) {
-	conn, err := sqlite.OpenConn(":memory:", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-
-	f1, err := NewFile(conn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	f2, err := ioutil.TempFile("", "sqlitex")
-	if err != nil {
-		t.Fatal(err)
-	}
-	ft := &ioxtest.Tester{F1: f1, F2: f2, T: t}
-	ft.Run()
-}
+// Package iox contains I/O utilities.
+//
+// The primary concern of the package is managing and minimizing the use
+// of file descriptors, an operating system resource which is often in
+// short supply in high-concurrency servers.
+//
+// The two objects that help in this are the Filer and BufferFile.
+//
+// A filer manages a allotment of file descriptors, blocking on file
+// creation until an old file closes and frees up a descriptor allotment.
+//
+// A BufferFile keeps a fraction of its contents in memory.
+// If the number of bytes stored in a BufferFile is small, no file
+// descriptor is ever used.
+package iox // import "github.com/moleculer-go/sqlite/iox"

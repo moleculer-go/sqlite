@@ -24,8 +24,8 @@ import (
 	"testing"
 	"time"
 
-	"crawshaw.io/sqlite"
-	"crawshaw.io/sqlite/sqlitex"
+	"github.com/moleculer-go/sqlite"
+	"github.com/moleculer-go/sqlite/sqlitex"
 )
 
 func TestConn(t *testing.T) {

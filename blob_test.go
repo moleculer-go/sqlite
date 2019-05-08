@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"crawshaw.io/sqlite"
+	"github.com/moleculer-go/sqlite"
 )
 
 func TestBlob(t *testing.T) {
