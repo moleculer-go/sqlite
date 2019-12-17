@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/moleculer-go/sqlite"
 )
@@ -50,7 +51,7 @@ func TestExec(t *testing.T) {
 	insert := func(succeed bool) (err error) {
 		defer Save(conn)(&err)
 
-		if err := Exec(conn, `INSERT INTO t VALUES ("hello");`, nil); err != nil {
+		if err := Exec(conn, `INSERT INTO t VALUES ('hello');`, nil); err != nil {
 			t.Fatal(err)
 		}
 
@@ -90,7 +91,7 @@ func TestPanic(t *testing.T) {
 	if err := Exec(conn, "CREATE TABLE t (c1);", nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := Exec(conn, `INSERT INTO t VALUES ("one");`, nil); err != nil {
+	if err := Exec(conn, `INSERT INTO t VALUES ('one');`, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -124,7 +125,7 @@ func TestPanic(t *testing.T) {
 func doPanic(conn *sqlite.Conn) (err error) {
 	defer Save(conn)(&err)
 
-	if err := Exec(conn, `INSERT INTO t VALUES ("hello");`, nil); err != nil {
+	if err := Exec(conn, `INSERT INTO t VALUES ('hello');`, nil); err != nil {
 		return err
 	}
 
@@ -183,7 +184,7 @@ func TestReleaseTx(t *testing.T) {
 	insert := func(succeed bool) (err error) {
 		defer Save(conn1)(&err)
 
-		if err := Exec(conn1, `INSERT INTO t VALUES ("hello");`, nil); err != nil {
+		if err := Exec(conn1, `INSERT INTO t VALUES ('hello');`, nil); err != nil {
 			t.Fatal(err)
 		}
 
@@ -272,6 +273,97 @@ func TestInterruptRollback(t *testing.T) {
 	}
 }
 
+var veryLongScript = `
+drop table if exists naturals;
+create table naturals
+( n integer unique primary key asc,
+  isprime bool,
+  factor integer);
+
+with recursive
+  nn (n)
+as (
+  select 2
+  union all
+  select n+1 as newn from nn
+  where newn < 1e10
+)
+insert into naturals
+select n, 1, null from nn;
+
+insert or replace into naturals
+  with recursive
+    product (prime,composite)
+  as (
+    select n, n*n as sqr
+      from naturals
+      where sqr <= (select max(n) from naturals)
+    union all
+    select prime, composite+prime as prod
+    from
+      product
+    where
+      prod <= (select max(n) from naturals)
+  )
+select n, 0, prime
+from product join naturals
+  on (product.composite = naturals.n)
+;
+`
+
+func TestInterruptRollbackLongQuery(t *testing.T) {
+	conn, err := sqlite.OpenConn("file::memory:?mode=memory&cache=shared", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	if err = ExecScript(conn, `
+		DROP TABLE IF EXISTS t;
+		CREATE TABLE t (c);
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	releaseFn := Save(conn)
+	if err := Exec(conn, `INSERT INTO t (c) VALUES (1);`, nil); err != nil {
+		t.Fatal(err)
+	}
+	releaseFn(&err)
+	if err != nil {
+		t.Fatalf("relaseFn err: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	conn.SetInterrupt(ctx.Done())
+	testDone := make(chan struct{})
+	go func() {
+		defer close(testDone)
+		defer func() {
+			if err := recover(); err != nil {
+				t.Log("a panic occurred during rollback\n", err)
+				t.Fail()
+			}
+		}()
+		defer Save(conn)(&err)
+		if err := Exec(conn, `INSERT INTO t (c) VALUES (3);`, nil); err != nil {
+			t.Fatalf("interrupted too early")
+		}
+		err = ExecScript(conn, veryLongScript)
+	}()
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	<-testDone
+	conn.SetInterrupt(nil)
+	got, err := ResultInt(conn.Prep("SELECT count(*) FROM t;"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 1 {
+		t.Errorf("want 1 row, got %d", got)
+	}
+}
+
 func TestBusySnapshot(t *testing.T) {
 	dir, err := ioutil.TempDir("", "sqlitex-test-")
 	if err != nil {
@@ -296,7 +388,7 @@ func TestBusySnapshot(t *testing.T) {
 	if err = ExecScript(conn0, `
 		DROP TABLE IF EXISTS t;
 		CREATE TABLE t (c, b BLOB);
-		INSERT INTO t (c, b) VALUES (4, "hi");
+		INSERT INTO t (c, b) VALUES (4, 'hi');
 	`); err != nil {
 		t.Fatal(err)
 	}

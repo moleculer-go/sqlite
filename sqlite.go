@@ -23,10 +23,12 @@ package sqlite
 // #cgo CFLAGS: -DSQLITE_OMIT_DEPRECATED
 // #cgo CFLAGS: -DSQLITE_ENABLE_JSON1
 // #cgo CFLAGS: -DSQLITE_ENABLE_SESSION
+// #cgo CFLAGS: -DSQLITE_ENABLE_SNAPSHOT
 // #cgo CFLAGS: -DSQLITE_ENABLE_PREUPDATE_HOOK
 // #cgo CFLAGS: -DSQLITE_USE_ALLOCA
 // #cgo CFLAGS: -DSQLITE_ENABLE_COLUMN_METADATA
 // #cgo CFLAGS: -DHAVE_USLEEP=1
+// #cgo CFLAGS: -DSQLITE_DQS=0
 // #cgo windows LDFLAGS: -Wl,-Bstatic -lwinpthread -Wl,-Bdynamic
 // #cgo linux LDFLAGS: -ldl -lm
 // #cgo linux CFLAGS: -std=c99
@@ -49,6 +51,10 @@ package sqlite
 // extern void log_fn(void* pArg, int code, char* msg);
 // static void enable_logging() {
 //	sqlite3_config(SQLITE_CONFIG_LOG, log_fn, NULL);
+// }
+//
+// static int db_config_onoff(sqlite3* db, int op, int onoff) {
+//   return sqlite3_db_config(db, op, onoff, NULL);
 // }
 import "C"
 import (
@@ -194,8 +200,44 @@ func (conn *Conn) Close() error {
 	return reserr("Conn.Close", "", "", res)
 }
 
-// CheckResult reports whether any statement on this connection
-// is in the process of returning results.
+func (conn *Conn) GetAutocommit() bool {
+	return int(C.sqlite3_get_autocommit(conn.conn)) != 0
+}
+
+const (
+	SQLITE_DBCONFIG_DQS_DML = C.int(C.SQLITE_DBCONFIG_DQS_DML)
+	SQLITE_DBCONFIG_DQS_DDL = C.int(C.SQLITE_DBCONFIG_DQS_DDL)
+)
+
+// EnableDoubleQuotedStringLiterals allows fine grained control over whether
+// double quoted string literals are accepted in Data Manipulation Language or
+// Data Definition Language queries.
+//
+// By default DQS is disabled since double quotes should indicate an identifier.
+//
+// https://sqlite.org/quirks.html#dblquote
+func (conn *Conn) EnableDoubleQuotedStringLiterals(dml, ddl bool) error {
+	var enable C.int
+	if dml {
+		enable = 1
+	}
+	res := C.db_config_onoff(conn.conn, SQLITE_DBCONFIG_DQS_DML, enable)
+	if res != 0 {
+		return reserr("Conn.EnableDoubleQuotedStringLiterals", "", "", res)
+	}
+	enable = 0
+	if ddl {
+		enable = 1
+	}
+	res = C.db_config_onoff(conn.conn, SQLITE_DBCONFIG_DQS_DDL, enable)
+	if res != 0 {
+		return reserr("Conn.EnableDoubleQuotedStringLiterals", "", "", res)
+	}
+	return nil
+}
+
+// CheckReset reports whether any statement on this connection is in the process
+// of returning results.
 func (conn *Conn) CheckReset() string {
 	for _, stmt := range conn.stmts {
 		if stmt.lastHasRow {
@@ -670,6 +712,7 @@ func (stmt *Stmt) findBindName(loc string, param string) int {
 
 // DataCount returns the number of columns in the current row of the result
 // set of prepared statement.
+//
 // https://sqlite.org/c3ref/data_count.html
 func (stmt *Stmt) DataCount() int {
 	return int(C.sqlite3_data_count(stmt.stmt))
@@ -677,6 +720,7 @@ func (stmt *Stmt) DataCount() int {
 
 // ColumnCount returns the number of columns in the result set returned by the
 // prepared statement.
+//
 // https://sqlite.org/c3ref/column_count.html
 func (stmt *Stmt) ColumnCount() int {
 	return int(C.sqlite3_column_count(stmt.stmt))
@@ -684,18 +728,23 @@ func (stmt *Stmt) ColumnCount() int {
 
 // ColumnName returns the name assigned to a particular column in the result
 // set of a SELECT statement.
+//
 // https://sqlite.org/c3ref/column_name.html
 func (stmt *Stmt) ColumnName(col int) string {
 	return C.GoString((*C.char)(unsafe.Pointer(C.sqlite3_column_name(stmt.stmt, C.int(col)))))
 }
 
 // BindParamCount reports the number of parameters in stmt.
+//
 // https://www.sqlite.org/c3ref/bind_parameter_count.html
 func (stmt *Stmt) BindParamCount() int {
 	return int(C.sqlite3_bind_parameter_count(stmt.stmt))
 }
 
 // BindInt64 binds value to a numbered stmt parameter.
+//
+// Parameter indices start at 1.
+//
 // https://www.sqlite.org/c3ref/bind_blob.html
 func (stmt *Stmt) BindInt64(param int, value int64) {
 	res := C.sqlite3_bind_int64(stmt.stmt, C.int(param), C.sqlite3_int64(value))
@@ -703,6 +752,10 @@ func (stmt *Stmt) BindInt64(param int, value int64) {
 }
 
 // BindBool binds value (as an integer 0 or 1) to a numbered stmt parameter.
+//
+// Parameter indices start at 1.
+//
+// https://www.sqlite.org/c3ref/bind_blob.html
 func (stmt *Stmt) BindBool(param int, value bool) {
 	v := 0
 	if value {
@@ -716,6 +769,8 @@ func (stmt *Stmt) BindBool(param int, value bool) {
 //
 // In-memory copies of value are made using this interface.
 // For large blobs, consider using the streaming Blob object.
+//
+// Parameter indices start at 1.
 //
 // https://www.sqlite.org/c3ref/bind_blob.html
 func (stmt *Stmt) BindBytes(param int, value []byte) {
@@ -731,6 +786,9 @@ func (stmt *Stmt) BindBytes(param int, value []byte) {
 var emptyCstr = C.CString("")
 
 // BindText binds value to a numbered stmt parameter.
+//
+// Parameter indices start at 1.
+//
 // https://www.sqlite.org/c3ref/bind_blob.html
 func (stmt *Stmt) BindText(param int, value string) {
 	var v *C.char
@@ -746,7 +804,9 @@ func (stmt *Stmt) BindText(param int, value string) {
 }
 
 // BindFloat binds value to a numbered stmt parameter.
-// Parameter indicies start at 1.
+//
+// Parameter indices start at 1.
+//
 // https://www.sqlite.org/c3ref/bind_blob.html
 func (stmt *Stmt) BindFloat(param int, value float64) {
 	res := C.sqlite3_bind_double(stmt.stmt, C.int(param), C.double(value))
@@ -754,7 +814,9 @@ func (stmt *Stmt) BindFloat(param int, value float64) {
 }
 
 // BindNull binds an SQL NULL value to a numbered stmt parameter.
-// Parameter indicies start at 1.
+//
+// Parameter indices start at 1.
+//
 // https://www.sqlite.org/c3ref/bind_blob.html
 func (stmt *Stmt) BindNull(param int) {
 	res := C.sqlite3_bind_null(stmt.stmt, C.int(param))
@@ -762,7 +824,9 @@ func (stmt *Stmt) BindNull(param int) {
 }
 
 // BindNull binds a blob of zeros of length len to a numbered stmt parameter.
-// Parameter indicies start at 1.
+//
+// Parameter indices start at 1.
+//
 // https://www.sqlite.org/c3ref/bind_blob.html
 func (stmt *Stmt) BindZeroBlob(param int, len int64) {
 	res := C.sqlite3_bind_zeroblob64(stmt.stmt, C.int(param), C.sqlite3_uint64(len))
@@ -814,7 +878,8 @@ func (stmt *Stmt) SetZeroBlob(param string, len int64) {
 // Note: this method calls sqlite3_column_int64 and then converts the
 // resulting 64-bits to an int.
 //
-// Column indicies start at 0.
+// Column indices start at 0.
+//
 // https://www.sqlite.org/c3ref/column_blob.html
 func (stmt *Stmt) ColumnInt(col int) int {
 	return int(stmt.ColumnInt64(col))
@@ -822,7 +887,8 @@ func (stmt *Stmt) ColumnInt(col int) int {
 
 // ColumnInt32 returns a query result value as an int32.
 //
-// Column indicies start at 0.
+// Column indices start at 0.
+//
 // https://www.sqlite.org/c3ref/column_blob.html
 func (stmt *Stmt) ColumnInt32(col int) int32 {
 	return int32(C.sqlite3_column_int(stmt.stmt, C.int(col)))
@@ -830,7 +896,8 @@ func (stmt *Stmt) ColumnInt32(col int) int32 {
 
 // ColumnInt64 returns a query result value as an int64.
 //
-// Column indicies start at 0.
+// Column indices start at 0.
+//
 // https://www.sqlite.org/c3ref/column_blob.html
 func (stmt *Stmt) ColumnInt64(col int) int64 {
 	return int64(C.sqlite3_column_int64(stmt.stmt, C.int(col)))
@@ -839,7 +906,8 @@ func (stmt *Stmt) ColumnInt64(col int) int64 {
 // ColumnBytes reads a query result into buf.
 // It reports the number of bytes read.
 //
-// Column indicies start at 0.
+// Column indices start at 0.
+//
 // https://www.sqlite.org/c3ref/column_blob.html
 func (stmt *Stmt) ColumnBytes(col int, buf []byte) int {
 	return copy(buf, stmt.columnBytes(col))
@@ -919,7 +987,8 @@ func (t ColumnType) String() string {
 //   SQLITE_BLOB
 //   SQLITE_NULL
 //
-// Column indicies start at 0.
+// Column indices start at 0.
+//
 // https://www.sqlite.org/c3ref/column_blob.html
 func (stmt *Stmt) ColumnType(col int) ColumnType {
 	return ColumnType(C.sqlite3_column_type(stmt.stmt, C.int(col)))
@@ -927,7 +996,8 @@ func (stmt *Stmt) ColumnType(col int) ColumnType {
 
 // ColumnText returns a query result as a string.
 //
-// Column indicies start at 0.
+// Column indices start at 0.
+//
 // https://www.sqlite.org/c3ref/column_blob.html
 func (stmt *Stmt) ColumnText(col int) string {
 	n := stmt.ColumnLen(col)
@@ -936,7 +1006,8 @@ func (stmt *Stmt) ColumnText(col int) string {
 
 // ColumnFloat returns a query result as a float64.
 //
-// Column indicies start at 0.
+// Column indices start at 0.
+//
 // https://www.sqlite.org/c3ref/column_blob.html
 func (stmt *Stmt) ColumnFloat(col int) float64 {
 	return float64(C.sqlite3_column_double(stmt.stmt, C.int(col)))
@@ -944,7 +1015,8 @@ func (stmt *Stmt) ColumnFloat(col int) float64 {
 
 // ColumnLen returns the number of bytes in a query result.
 //
-// Column indicies start at 0.
+// Column indices start at 0.
+//
 // https://www.sqlite.org/c3ref/column_blob.html
 func (stmt *Stmt) ColumnLen(col int) int {
 	return int(C.sqlite3_column_bytes(stmt.stmt, C.int(col)))
