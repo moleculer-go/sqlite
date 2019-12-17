@@ -19,7 +19,7 @@ import "unsafe"
 // #include <stdlib.h>
 // #include <sqlite3.h>
 // static int db_config_onoff(sqlite3* db, int op, int onoff) {
-//   return sqlite3_db_config(db, op, onoff);
+//   return sqlite3_db_config(db, op, onoff, NULL);
 // }
 import "C"
 
@@ -29,6 +29,7 @@ const (
 
 // EnableLoadExtension allows extensions to be loaded via LoadExtension().  The
 // SQL interface is left disabled as recommended.
+//
 // https://www.sqlite.org/c3ref/enable_load_extension.html
 func (conn *Conn) EnableLoadExtension(on bool) error {
 	var enable C.int
@@ -40,6 +41,7 @@ func (conn *Conn) EnableLoadExtension(on bool) error {
 }
 
 // LoadExtension attempts to load a runtime-loadable extension.
+//
 // https://www.sqlite.org/c3ref/load_extension.html
 func (conn *Conn) LoadExtension(ext, entry string) error {
 	cext := C.CString(ext)

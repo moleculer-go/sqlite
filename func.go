@@ -69,16 +69,21 @@ type Value struct {
 	ptr *C.sqlite3_value
 }
 
-func (v Value) Int() int       { return int(C.sqlite3_value_int(v.ptr)) }
-func (v Value) Int64() int64   { return int64(C.sqlite3_value_int64(v.ptr)) }
-func (v Value) Float() float64 { return float64(C.sqlite3_value_double(v.ptr)) }
-func (v Value) Len() int       { return int(C.sqlite3_value_bytes(v.ptr)) }
+func (v Value) IsNil() bool      { return v.ptr == nil }
+func (v Value) Int() int         { return int(C.sqlite3_value_int(v.ptr)) }
+func (v Value) Int64() int64     { return int64(C.sqlite3_value_int64(v.ptr)) }
+func (v Value) Float() float64   { return float64(C.sqlite3_value_double(v.ptr)) }
+func (v Value) Len() int         { return int(C.sqlite3_value_bytes(v.ptr)) }
+func (v Value) Type() ColumnType { return ColumnType(C.sqlite3_value_type(v.ptr)) }
 func (v Value) Text() string {
+	ptr := unsafe.Pointer(C.sqlite3_value_text(v.ptr))
 	n := v.Len()
-	return C.GoStringN((*C.char)(unsafe.Pointer(C.sqlite3_value_text(v.ptr))), C.int(n))
+	return C.GoStringN((*C.char)(ptr), C.int(n))
 }
 func (v Value) Blob() []byte {
-	panic("TODO")
+	ptr := unsafe.Pointer(C.sqlite3_value_blob(v.ptr))
+	n := v.Len()
+	return C.GoBytes(ptr, C.int(n))
 }
 
 type xfunc struct {
